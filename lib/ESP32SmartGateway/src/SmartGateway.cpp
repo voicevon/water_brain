@@ -4,10 +4,19 @@
 // 初始化单例指针
 SmartGateway* SmartGateway::_instance = nullptr;
 
+// BLE 异步扫描结束后的回调
+void SmartGateway::scanCompleteCB(BLEScanResults results) {
+    BLEDevice::getScan()->clearResults(); // 清理扫描结果，释放内存
+    if (_instance) {
+        _instance->_isScanning = false;
+    }
+}
+
 SmartGateway::SmartGateway() : _netManager(_espClient) {
     _instance = this;
     _lastSeqNum = -1;
     _bleConnected = false;
+    _isScanning = false;
     _lastBlePacketTime = 0;
 }
 
@@ -43,9 +52,10 @@ void SmartGateway::begin() {
 void SmartGateway::loop() {
     _netManager.loop();
 
-    // 触发定时扫描
-    if (_pBLEScan) {
-        _pBLEScan->start(BLE_SCAN_DURATION_S, false);
+    // 触发定时扫描 (非阻塞异步方式)
+    if (_pBLEScan && !_isScanning) {
+        _isScanning = true;
+        _pBLEScan->start(BLE_SCAN_DURATION_S, scanCompleteCB, false);
     }
 
     // 检测 BLE 连接心跳超时（超过 15 秒未收到包则判定为断开）

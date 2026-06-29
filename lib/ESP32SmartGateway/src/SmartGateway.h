@@ -38,6 +38,9 @@ public:
     // 查询网络状态
     NetworkState getNetworkState();
 
+    // 更新扫描状态
+    void setScanning(bool val) { _isScanning = val; }
+
 private:
     static SmartGateway* _instance;
     
@@ -51,11 +54,13 @@ private:
 
     uint8_t _lastSeqNum = -1;
     bool _bleConnected = false;
+    bool _isScanning = false;
     uint32_t _lastBlePacketTime = 0;
 
     void setupBLE();
     
     static void mqttCallback(char* topic, byte* payload, unsigned int length);
+    static void scanCompleteCB(BLEScanResults results);
     void handleMqttMessage(char* topic, byte* payload, unsigned int length);
 
     class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
