@@ -10,25 +10,14 @@
 #include "config.h"
 
 // ============================================================================
-//  HC595 移位寄存器控制机制
+//  GPIO 直接控制引脚定义
 // ============================================================================
 
-// 全局 16 位移位寄存器状态缓冲（Bit 0 ~ 15）
-uint16_t g_hc595State = 0;
-
-/**
- * @brief 将 16 位状态数据通过 SPI/GPIO 串行移入两片级联的 HC595 并锁存输出
- * @param state 16 位二进制组合状态
- */
-void updateHC595(uint16_t state) {
-    digitalWrite(HC595_ST_CP_PIN, LOW);
-    
-    // 分两个字节依次移出（高位芯片与低位芯片）
-    shiftOut(HC595_DS_PIN, HC595_SH_CP_PIN, MSBFIRST, (state >> 8) & 0xFF); // Bit 15~8 (LED 阶段与部分指示灯)
-    shiftOut(HC595_DS_PIN, HC595_SH_CP_PIN, MSBFIRST, state & 0xFF);        // Bit 7~0  (继电器及指示灯)
-    
-    digitalWrite(HC595_ST_CP_PIN, HIGH);
-}
+// 10步阶段指示灯引脚映射数组，方便管理与循环控制
+const int STAGE_LED_PINS[10] = {
+    LED_PIN_STAGE_0, LED_PIN_STAGE_1, LED_PIN_STAGE_2, LED_PIN_STAGE_3, LED_PIN_STAGE_4,
+    LED_PIN_STAGE_5, LED_PIN_STAGE_6, LED_PIN_STAGE_7, LED_PIN_STAGE_8, LED_PIN_STAGE_9
+};
 
 // ============================================================================
 //  数据结构与类定义（骨架）
@@ -76,8 +65,8 @@ private:
 class SamplingChannel {
 public:
     int id;
-    int relayBit; // 对应 HC595 位偏移
-    int ledBit;   // 对应 HC595 位偏移
+    int relayPin; // 物理 GPIO 引脚
+    int ledPin;   // 物理 GPIO 引脚
     uint32_t expectedDuration;
     uint32_t pumpWorkTime;
     float safetyFactor;
@@ -90,8 +79,8 @@ public:
     uint32_t onCount = 0;
     uint32_t offCount = 0;
 
-    SamplingChannel(int chId, int rBit, int lBit, uint32_t defaultDur) 
-        : id(chId), relayBit(rBit), ledBit(lBit), expectedDuration(defaultDur), 
+    SamplingChannel(int chId, int rPin, int lPin, uint32_t defaultDur) 
+        : id(chId), relayPin(rPin), ledPin(lPin), expectedDuration(defaultDur), 
           pumpWorkTime(DEFAULT_PUMP_WORK_SEC), safetyFactor(DEFAULT_SAFETY_FACTOR) {}
 
     /**
@@ -151,9 +140,9 @@ DataProcessor processors[4];
 
 // 3通道本地继电器与指示灯物理状态机
 SamplingChannel channels[3] = {
-    SamplingChannel(0, HC595_RELAY_CH0, HC595_LED_CH0, DEFAULT_EXPECTED_DUR_CH0),
-    SamplingChannel(1, HC595_RELAY_CH1, HC595_LED_CH1, DEFAULT_EXPECTED_DUR_CH1),
-    SamplingChannel(2, HC595_RELAY_CH2, HC595_LED_CH2, DEFAULT_EXPECTED_DUR_CH2)
+    SamplingChannel(0, RELAY_PIN_CH0, LED_PIN_CH0, DEFAULT_EXPECTED_DUR_CH0),
+    SamplingChannel(1, RELAY_PIN_CH1, LED_PIN_CH1, DEFAULT_EXPECTED_DUR_CH1),
+    SamplingChannel(2, RELAY_PIN_CH2, LED_PIN_CH2, DEFAULT_EXPECTED_DUR_CH2)
 };
 
 uint32_t lastWiFiCheck = 0;
@@ -225,14 +214,19 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Starting water_brain...");
 
-    // 配置 HC595 引脚输出模式
-    pinMode(HC595_DS_PIN, OUTPUT);
-    pinMode(HC595_SH_CP_PIN, OUTPUT);
-    pinMode(HC595_ST_CP_PIN, OUTPUT);
-    
-    // 初始化状态，全关
-    g_hc595State = 0;
-    updateHC595(g_hc595State);
+    // 初始化 3 路水泵继电器引脚与 3 路传感器状态指示灯引脚
+    for (int i = 0; i < 3; i++) {
+        pinMode(channels[i].relayPin, OUTPUT);
+        digitalWrite(channels[i].relayPin, LOW); // 默认关闭水泵
+        pinMode(channels[i].ledPin, OUTPUT);
+        digitalWrite(channels[i].ledPin, LOW);   // 默认关闭通道指示灯
+    }
+
+    // 初始化 10 步状态机阶段指示灯引脚
+    for (int i = 0; i < 10; i++) {
+        pinMode(STAGE_LED_PINS[i], OUTPUT);
+        digitalWrite(STAGE_LED_PINS[i], LOW);   // 默认关闭阶段指示灯
+    }
 
     // 初始化各个通信组件
     setupWiFi();
@@ -263,33 +257,23 @@ void loop() {
     // 通道 2：对应 SENSOR_MAP_PUMP_2 的传感器输入
     channelPumps[2] = channels[2].update(processors[SENSOR_MAP_PUMP_2].isDetected());
 
-    // 根据逻辑状态重新组装 16 位 HC595 输出状态
-    g_hc595State = 0;
-    
-    // 1. 设置 3 路水泵继电器状态
-    if (channelPumps[0]) g_hc595State |= (1 << HC595_RELAY_CH0);
-    if (channelPumps[1]) g_hc595State |= (1 << HC595_RELAY_CH1);
-    if (channelPumps[2]) g_hc595State |= (1 << HC595_RELAY_CH2);
+    // 1. 直接控制 3 路水泵继电器引脚与 3 路传感器指示 LED
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(channels[i].relayPin, channelPumps[i] ? HIGH : LOW);
+        digitalWrite(channels[i].ledPin, channels[i].isDetected ? HIGH : LOW);
+    }
 
-    // 2. 设置 3 路传感器指示 LED 状态（例如检测到液体或 Active 状态）
-    if (channels[0].isDetected) g_hc595State |= (1 << HC595_LED_CH0);
-    if (channels[1].isDetected) g_hc595State |= (1 << HC595_LED_CH1);
-    if (channels[2].isDetected) g_hc595State |= (1 << HC595_LED_CH2);
-
-    // 3. 设置 10 步状态机阶段指示 LED
-    // 示例：这里我们指示当前正在运行采样的通道的 Stage（如果没有通道处于 active，则显示通道0的Stage）
+    // 2. 确定当前正在运行采样的通道的 Stage
     int activeStage = 0;
     if (channels[0].active) activeStage = channels[0].currentStage;
     else if (channels[1].active) activeStage = channels[1].currentStage;
     else if (channels[2].active) activeStage = channels[2].currentStage;
     else activeStage = channels[0].currentStage; // 缺省空闲阶段
 
-    if (activeStage >= 0 && activeStage < 10) {
-        g_hc595State |= (1 << (HC595_LED_STAGE_BASE + activeStage));
+    // 3. 更新 10 步状态机指示灯，仅点亮当前 Stage 对应的指示灯，熄灭其他 9 个
+    for (int stage = 0; stage < 10; stage++) {
+        digitalWrite(STAGE_LED_PINS[stage], (stage == activeStage) ? HIGH : LOW);
     }
-
-    // 写入级联移位寄存器并更新物理状态
-    updateHC595(g_hc595State);
 
     // 定期上报系统状态 JSON
     publishStatus();

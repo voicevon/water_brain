@@ -5,21 +5,28 @@
 //  全局配置文件 — 所有硬件参数、协议常量、网络配置的唯一来源
 // ============================================================
 
-// -------- 级联 HC595 移位寄存器总线引脚配置 --------
-#define HC595_DS_PIN     14  // 串行数据输入 (SER)
-#define HC595_SH_CP_PIN  12  // 移位寄存器时钟 (SRCLK)
-#define HC595_ST_CP_PIN  13  // 存储寄存器/锁存时钟 (RCLK)
+// -------- 直接控制 GPIO 引脚配置 --------
+// 3路继电器/水泵引脚
+#define RELAY_PIN_CH0   25
+#define RELAY_PIN_CH1   26
+#define RELAY_PIN_CH2   27
 
-// 继电器/泵和指示灯在 HC595 16-bit 寄存器中的位偏移定义
-#define HC595_RELAY_CH0   0  // 继电器 0
-#define HC595_RELAY_CH1   1  // 继电器 1
-#define HC595_RELAY_CH2   2  // 继电器 2
+// 3路传感器通道状态指示灯引脚
+#define LED_PIN_CH0     13
+#define LED_PIN_CH1     14
+#define LED_PIN_CH2     4
 
-#define HC595_LED_CH0     3  // 通道 0 状态指示 LED
-#define HC595_LED_CH1     4  // 通道 1 状态指示 LED
-#define HC595_LED_CH2     5  // 通道 2 状态指示 LED
-
-#define HC595_LED_STAGE_BASE 6 // 10 个阶段指示灯起始位 (Bit 6~15)
+// 10步状态机阶段指示灯引脚 (对应 Stage 0 ~ 9)
+#define LED_PIN_STAGE_0  16
+#define LED_PIN_STAGE_1  17
+#define LED_PIN_STAGE_2  18
+#define LED_PIN_STAGE_3  19
+#define LED_PIN_STAGE_4  21
+#define LED_PIN_STAGE_5  22
+#define LED_PIN_STAGE_6  23
+#define LED_PIN_STAGE_7  32
+#define LED_PIN_STAGE_8  33
+#define LED_PIN_STAGE_9  5
 
 // -------- 传感器通道对齐映射表 --------
 // 传感器节点 FengBLE 广播 4 个通道 (Ch0~Ch3)
