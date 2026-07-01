@@ -78,6 +78,11 @@
 #define MQTT_DURATION_SUB    "water_brain/config/duration/+"
 #define MQTT_PUMP_TIME_SUB   "water_brain/config/pump_time/+"
 
+// 站点名称定义（作为过滤依据）
+#define STATION_NAME         "dongzhan"
+// 订阅传感器数据的主题（以 water_Android 为准）
+#define MQTT_SENSOR_DATA_SUB "water/sensor/status"
+
 // MQTT 非阻塞重连最小间隔（毫秒）
 #define MQTT_RECONNECT_INTERVAL_MS  5000UL
 

@@ -1,5 +1,6 @@
 #include "SmartGateway.h"
 #include "../../../src/config.h"
+#include <ArduinoJson.h>
 
 // 初始化单例指针
 SmartGateway* SmartGateway::_instance = nullptr;
@@ -12,7 +13,7 @@ void SmartGateway::scanCompleteCB(BLEScanResults results) {
     }
 }
 
-SmartGateway::SmartGateway() : _netManager(_espClient) {
+SmartGateway::SmartGateway(SensorSource source) : _netManager(_espClient), _sensorSource(source) {
     _instance = this;
     _lastSeqNum = -1;
     _bleConnected = false;
@@ -40,28 +41,35 @@ void SmartGateway::begin() {
             if (_instance) {
                 _instance->_netManager.subscribe(MQTT_DURATION_SUB);
                 _instance->_netManager.subscribe(MQTT_PUMP_TIME_SUB);
+                if (_instance->_sensorSource == SensorSource::MQTT) {
+                    _instance->_netManager.subscribe(MQTT_SENSOR_DATA_SUB);
+                }
             }
         }
     });
 
     _netManager.setMqttCallback(mqttCallback);
 
-    setupBLE();
+    if (_sensorSource == SensorSource::BLE) {
+        setupBLE();
+    }
 }
 
 void SmartGateway::loop() {
     _netManager.loop();
 
-    // 触发定时扫描 (非阻塞异步方式)
-    if (_pBLEScan && !_isScanning) {
-        _isScanning = true;
-        _pBLEScan->start(BLE_SCAN_DURATION_S, scanCompleteCB, false);
-    }
+    if (_sensorSource == SensorSource::BLE) {
+        // 触发定时扫描 (非阻塞异步方式)
+        if (_pBLEScan && !_isScanning) {
+            _isScanning = true;
+            _pBLEScan->start(BLE_SCAN_DURATION_S, scanCompleteCB, false);
+        }
 
-    // 检测 BLE 连接心跳超时（超过 15 秒未收到包则判定为断开）
-    if (_bleConnected && (millis() - _lastBlePacketTime > 15000)) {
-        _bleConnected = false;
-        Serial.println("[BLE DEBUG] BLE connection timeout, set status to disconnected.");
+        // 检测 BLE 连接心跳超时（超过 15 秒未收到包则判定为断开）
+        if (_bleConnected && (millis() - _lastBlePacketTime > 15000)) {
+            _bleConnected = false;
+            Serial.println("[BLE DEBUG] BLE connection timeout, set status to disconnected.");
+        }
     }
 }
 
@@ -102,6 +110,28 @@ void SmartGateway::mqttCallback(char* topic, byte* payload, unsigned int length)
 
 void SmartGateway::handleMqttMessage(char* topic, byte* payload, unsigned int length) {
     String topicStr(topic);
+
+    if (_sensorSource == SensorSource::MQTT && topicStr == MQTT_SENSOR_DATA_SUB) {
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, payload, length);
+        if (!error) {
+            const char* name = doc["name"] | "";
+            if (strcmp(name, STATION_NAME) == 0) {
+                uint16_t ch0 = doc["ch1"] | 0;
+                uint16_t ch1 = doc["ch2"] | 0;
+                uint16_t ch2 = doc["ch3"] | 0;
+                uint16_t ch3 = doc["ch4"] | 0;
+                if (_sensorCb) {
+                    _sensorCb(ch0, ch1, ch2, ch3);
+                }
+            }
+        } else {
+            Serial.print(F("[GATEWAY MQTT] Failed to parse sensor JSON: "));
+            Serial.println(error.f_str());
+        }
+        return;
+    }
+
     String valStr;
     for (unsigned int i = 0; i < length; i++) {
         valStr += (char)payload[i];

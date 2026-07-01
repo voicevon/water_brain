@@ -8,6 +8,12 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 
+// 传感器数据源类型
+enum class SensorSource {
+    BLE,
+    MQTT
+};
+
 class SmartGateway {
 public:
     // 事件回调函数指针定义
@@ -15,7 +21,7 @@ public:
     typedef void (*ConfigDurationCallback)(int channelId, float durationMinutes);
     typedef void (*ConfigPumpTimeCallback)(int channelId, float pumpTimeSeconds);
 
-    SmartGateway();
+    SmartGateway(SensorSource source = SensorSource::BLE);
 
     // 初始化网关（WiFi, MQTT, BLE）
     void begin();
@@ -43,6 +49,7 @@ public:
 
 private:
     static SmartGateway* _instance;
+    SensorSource _sensorSource;
     
     SensorDataCallback _sensorCb = nullptr;
     ConfigDurationCallback _durationCb = nullptr;
